@@ -2,7 +2,7 @@ import jax
 from jax import numpy as np
 
 def get_tokenizer():
-    from tokenizers import Tokenizer
+    from data_utils import Tokenizer
     tokenizer = Tokenizer.from_file("20B_tokenizer.json")
     return tokenizer
 
@@ -51,7 +51,7 @@ def rnn_generate(model, weights_tree, prompt, n_tokens=50, tokenizer=None, state
         state = np.zeros((model_info['n_layer'], 5, model_info['n_embed']))
     if tokenizer is None:
         tokenizer = get_tokenizer()
-    input_ids = tokenizer.encode(prompt).ids
+    input_ids = tokenizer.encode(prompt)
     print(prompt)
     for input_id in input_ids[:-1]:
         _, state = model(input_id, state, **weights_tree)
@@ -69,7 +69,7 @@ def rnn_generate(model, weights_tree, prompt, n_tokens=50, tokenizer=None, state
 def rnn_generate_batch_stateless(model, weights_tree, prompt, n_tokens=10, tokenizer=None):
     if tokenizer is None:
         tokenizer = get_tokenizer()
-    input_ids = tokenizer.encode(prompt).ids
+    input_ids = tokenizer.encode(prompt)
     print(prompt, end='')
     for _ in range(n_tokens):
         input_ids_batch = np.array(input_ids).reshape(1, -1)
