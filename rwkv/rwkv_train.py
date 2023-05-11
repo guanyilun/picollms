@@ -1,5 +1,5 @@
 """train rwkv using long-range arena benchmark dataset"""
-import logging
+from absl import logging
 
 import jax
 from jax import jit, numpy as np
@@ -10,7 +10,7 @@ import os.path as op
 from rwkv_basic import rwkv_net
 from rwkv_batch import rwkv_net_batch
 from rwkv_utils import get_tokenizer, rnn_generate, parse_rwkv_weight
-from rwkv_train_utils import init_weight_info, init_weights, init_uniform, KeyGen, get_loss_fn, get_acc_fn
+import rwkv_train_utils as tu
 from data_utils import load_dataset
 
 use_wandb = False
@@ -32,9 +32,9 @@ run_config = {
     'n_epoch': 100,
     'batch_size': 8,
     'eval_freq': 200,
-    'n_channel': 768,
-    'n_layer': 12,
-    'n_ffn': 3072,
+    'n_channel': 512,
+    'n_layer': 8,
+    'n_ffn': 1024,
     # 'opt': 'adam',
     # 'opt_params': adam_params,
     'opt': 'lion',
@@ -53,14 +53,14 @@ if use_wandb:
 tokenizer = get_tokenizer()
 
 # initialize weights
-keygen = KeyGen()
+keygen = tu.KeyGen()
 logging.info("initializing weights...")
-# winfo = init_weight_info(
-#     tokenizer.get_vocab_size(),
-#     run_config['n_channel'],
-#     run_config['n_layer'],
-#     run_config['n_ffn'],
-# )
+winfo = tu.init_weight_info(
+    tokenizer.get_vocab_size(),
+    run_config['n_channel'],
+    run_config['n_layer'],
+    run_config['n_ffn'],
+)
 # option 1:
 # all zero init but head and embedding
 # weights = init_weights(winfo, keygen, zeros)  # key is not required for zeros init
@@ -74,8 +74,14 @@ logging.info("initializing weights...")
 
 # option 3:
 # load existing weights as starting point
-weights = parse_rwkv_weight("pretrain/RWKV-4-PilePlus-169M-20230505-3102-512Gtokens-ctx4096.pth")
+# weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
+# logging.info("weights initialized")
+
+# option 4:
+ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
 logging.info("weights initialized")
+# weights = tu.init_weights_by_resampling_matching_tree(winfo, keygen, ref_weights)
+weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule)
 
 # initialize optimizers
 logging.info("initializing optimizer...")
@@ -84,13 +90,13 @@ opt_state = optimizer.init(weights)
 logging.info("optimizer initialized")
 
 # setup loss, its grad, accuracy and validation
-loss_fn = get_loss_fn(rwkv_net_batch)
+loss_fn = tu.get_loss_fn(rwkv_net_batch)
 loss_fn_grad = jax.value_and_grad(loss_fn)
-acc_fn = get_acc_fn(rwkv_net_batch)
+acc_fn = tu.get_acc_fn(rwkv_net_batch)
 
 def get_validation_results(weights):
     prompt = "Hamlet"
-    output = rnn_generate(rwkv_net, weights, prompt, 20, tokenizer)
+    output = rnn_generate(rwkv_net, weights, prompt, 50, tokenizer)
     res = {'output': output}
     return res
 

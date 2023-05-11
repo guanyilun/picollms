@@ -64,6 +64,7 @@ def rnn_generate(model, weights_tree, prompt, n_tokens=50, tokenizer=None, state
         print(out_token, end="")
         res += out_token
         input_ids.append(out_id)
+    print()
     return res
 
 def rnn_generate_batch_stateless(model, weights_tree, prompt, n_tokens=10, tokenizer=None):

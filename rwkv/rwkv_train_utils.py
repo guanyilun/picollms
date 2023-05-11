@@ -1,7 +1,9 @@
-from jax import numpy as np
 import jax
+from jax import numpy as np
 from jax.nn.initializers import uniform
 import optax
+import jax.tree_util as jtu
+import fnmatch
 
 # ==========================
 # Loss / Acc related
@@ -76,6 +78,94 @@ def init_weights(weight_info, keygen, init_fn, **kwargs):
 def init_uniform(key, shape, a=-1e-4, b=1e-4, dtype=np.float32):
     # uniform in [a, b) range, default to [-1e-4, 1e-4) following rwkv recommendation
     return uniform(scale=b-a)(key, shape, dtype=dtype) + a
+
+def resample_weights(key, target_shape, ref_weights: np.ndarray):
+    """Resample weights to given shape"""
+    flat_weights = ref_weights.flatten()
+    target_size = np.prod(np.array(target_shape))
+    random_indices = jax.random.randint(key, (target_size,), 0, flat_weights.shape[0])
+    resampled_weights = flat_weights[random_indices]
+    resampled_weights = np.reshape(resampled_weights, target_shape)
+    return resampled_weights
+
+def init_weights_by_resampling_matching_tree(weight_info, keygen, reference_wtree):
+    return jax.tree_map(lambda x, y: resample_weights(keygen(), x, y), weight_info, reference_wtree, is_leaf=lambda x: isinstance(x, tuple))
+
+def fold_winfo(winfo):
+    flat_winfo, re = jax.tree_flatten(
+        jax.tree_util.tree_map_with_path(lambda p, x: (".".join([str(p_.key) for p_ in p]), x), winfo, is_leaf=lambda x: isinstance(x, tuple)), 
+        is_leaf=lambda x: isinstance(x, tuple)
+    )
+    return {k: v for (k, v) in flat_winfo}, re
+
+def fold_wtree(wtree):
+    flat_weights, re = jtu.tree_flatten(
+        jtu.tree_map_with_path(lambda p, x: (".".join([str(p_.key) for p_ in p]), x), wtree, is_leaf=lambda x: isinstance(x, np.ndarray)),
+        is_leaf=lambda x: isinstance(x, tuple)
+    )
+    return {k: v for (k, v) in flat_weights}, re
+
+# match_rule works like this:
+#   if match_rule.key in flat_winfo.key:
+#       find all weights that match the patterns
+#       in values of match_rule.value, form a flat
+#       pull and resample the required number of weights
+#       from the flattend pool
+match_rule = {
+    "emb"       : "*emb*",
+    "head"      : "*head*",
+    "att.k_proj": "*att.k_proj",
+    "att.v_proj": "*att.v_proj",
+    "att.o_proj": "*att.o_proj",
+    "att.r_proj": "*att.r_proj",
+    "time_decay": "*time_decay",
+    "time_first": "*time_first",
+    "time_mix_k": "*time_mix_k",
+    "time_mix_v": "*time_mix_v",
+    "time_mix_r": "*time_mix_r",
+    "ffn.k_proj": "*ffn.k_proj",
+    "ffn.v_proj": "*ffn.v_proj",
+    "ffn.r_proj": "*ffn.r_proj",
+    "ln0.weight": "*ln0.weight",
+    "ln0.bias"  : "*ln0.bias",
+    "ln1.weight": "*ln1.weight",
+    "ln1.bias"  : "*ln1.bias",
+    "ln2.weight": "*ln2.weight",
+    "ln2.bias"  : "*ln2.bias",
+    "ln_out.weight" : "*ln_out.weight",
+    "ln_out.bias"   : "*ln_out.bias",
+}
+
+def init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, match_rule):
+    # get flat version of both winfo and ref_weights
+    # maintain the tree structure for reconstruction later
+    flat_winfo, re = fold_winfo(winfo)
+    flat_ref_weights, _ = fold_wtree(ref_weights)
+
+    ref_weights_keys = list(flat_ref_weights.keys())
+    flat_weights = {}
+    # for each key in target weights, find a matching rule
+    # and collect all matching weights, flatten, stack and resample
+    for k, shape in flat_winfo.items():
+        for (rule, query) in match_rule.items():
+            found_match = False
+            if rule in k:
+                matched_keys = fnmatch.filter(ref_weights_keys, query)
+                if len(matched_keys) == 0:
+                    raise ValueError(f"no matching key found for {k} in match_rule")
+                # collect all matching weights, flatten them and stack them
+                print(f"Initializing {k} with: {matched_keys}")
+                flat_ = np.hstack([flat_ref_weights[w].flatten() for w in matched_keys])
+                flat_weights[k] = resample_weights(keygen(), shape, flat_)
+                found_match = True
+                break
+        # if no match found, raise error.
+        # TODO: add a default rule to match all weights
+        if not found_match:
+            raise ValueError(f"key {k} not matched in match_rule")
+    # reconstruct the tree structure
+    return jtu.tree_unflatten(re, list(flat_weights.values()))
+
 
 # ==========================
 # Filename Utilities
