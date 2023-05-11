@@ -89,9 +89,25 @@ def resample_weights(key, target_shape, ref_weights: np.ndarray):
     return resampled_weights
 
 def init_weights_by_resampling_matching_tree(weight_info, keygen, reference_wtree):
+    """Resample weights from reference_wtree to match the shape of weight_info. It requires
+    weight_info to have the same tree structure as reference_wtree, but the values
+    can have different shapes. This means that for rwkv, as long as the n_layer matches, one
+    is free to vary embedding size, n_ffn, etc."""
     return jax.tree_map(lambda x, y: resample_weights(keygen(), x, y), weight_info, reference_wtree, is_leaf=lambda x: isinstance(x, tuple))
 
 def fold_winfo(winfo):
+    """Fold nested weight info into a flat dict. The keys are dot-separated paths to the weights.
+    The values are the shape of the weights.
+
+    Example:
+    { 'emb': {'weight': (n_vocab, n_channel)},
+      'blocks': {0: {'att': {'o_proj': (n_channel, n_channel)}}}}
+    becomes
+    { 'emb.weight': (n_vocab, n_channel),
+      'blocks.0.att.o_proj': (n_channel, n_channel)}
+
+    Also returns the tree definition `re` which can be used to unfold the flat dict back to the nested structure.
+    """
     flat_winfo, re = jax.tree_flatten(
         jax.tree_util.tree_map_with_path(lambda p, x: (".".join([str(p_.key) for p_ in p]), x), winfo, is_leaf=lambda x: isinstance(x, tuple)), 
         is_leaf=lambda x: isinstance(x, tuple)
@@ -99,6 +115,7 @@ def fold_winfo(winfo):
     return {k: v for (k, v) in flat_winfo}, re
 
 def fold_wtree(wtree):
+    """similar to fold_winfo, but for weights instead of weight info"""
     flat_weights, re = jtu.tree_flatten(
         jtu.tree_map_with_path(lambda p, x: (".".join([str(p_.key) for p_ in p]), x), wtree, is_leaf=lambda x: isinstance(x, np.ndarray)),
         is_leaf=lambda x: isinstance(x, tuple)
@@ -106,11 +123,13 @@ def fold_wtree(wtree):
     return {k: v for (k, v) in flat_weights}, re
 
 # match_rule works like this:
-#   if match_rule.key in flat_winfo.key:
-#       find all weights that match the patterns
-#       in values of match_rule.value, form a flat
-#       pull and resample the required number of weights
-#       from the flattend pool
+# if match_rule.key in flat_winfo.key:
+#    1. find all keys in reference weights that match the patterns
+#       specified in match_rule.value
+#    2. collect the weights in reference weight tree with matching
+#       patterns and stack them together after flattening
+#    3. resample a specific number of weights from the flattened
+#       reference weights to form the new weights
 match_rule = {
     "emb"       : "*emb*",
     "head"      : "*head*",
