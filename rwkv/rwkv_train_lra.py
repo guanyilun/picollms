@@ -1,17 +1,16 @@
 """train rwkv using long-range arena benchmark dataset"""
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-
 import jax
 from jax import jit, numpy as np
 from jax.nn.initializers import zeros, glorot_normal
+
 import optax
 import wandb
 import os.path as op
 from functools import partial
 
 from rwkv_batch import rwkv_net_batch
-from rwkv_train_utils import init_weight_info, init_weights, init_uniform, KeyGen
+import rwkv_train_utils as tu
+from rwkv_utils import parse_rwkv_weight
 from lra_utils import LRABatchConfig, lra_loss_fn, lra_acc_fn
 
 use_wandb = True
@@ -22,7 +21,7 @@ adam_params = {
     'eps': 1e-8,
 }
 lion_params = {
-    'learning_rate': 1e-1,
+    'learning_rate': 1e-4,
     'b1': 0.95,
     'b2': 0.98,
     'weight_decay': 0.01
@@ -31,7 +30,7 @@ run_config = {
     'name': 'rwkv-lra',
     'n_epoch': 3,
     'batch_size': 32,
-    'eval_freq': 100,
+    'eval_freq': 200,
     'n_train_step': 5000, # or n_epoch, whichever comes first
     'n_channel': 512,
     'n_layer': 4,
@@ -54,7 +53,7 @@ cache_path = "lra_benchmarks"
 lra_config = LRABatchConfig.from_s5(run_config['batch_size'], cache_path, "listops-classification")
 
 # initialize weights
-winfo = init_weight_info(
+winfo = tu.init_weight_info(
     lra_config.n_classes_in,
     run_config['n_channel'],
     run_config['n_layer'],
@@ -62,7 +61,7 @@ winfo = init_weight_info(
     n_vocab_out=lra_config.n_classes_out
 )
 
-keygen = KeyGen()
+keygen = tu.KeyGen()
 # option 1:
 # all zero init but head and embedding
 # weights = init_weights(winfo, None, zeros)  # key is not required for zeros init
@@ -70,8 +69,11 @@ keygen = KeyGen()
 # weights['head']['weight'] = init_uniform(keygen(), winfo['head']['weight'], a=-1e-4, b=1e-4)
 # option 2:
 # glorot_normal for all 2d matrices and zero for all 1d vectors
-w_init_fn = lambda key, shape: glorot_normal()(key, shape) if len(shape) == 2 else zeros(key, shape)
-weights = init_weights(winfo, keygen, w_init_fn)
+# w_init_fn = lambda key, shape: glorot_normal()(key, shape) if len(shape) == 2 else zeros(key, shape)
+# weights = tu.init_weights(winfo, keygen, w_init_fn)
+# option 3:
+ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
+weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights)
 
 # initialize optimizers
 optimizer = {'lion': optax.lion, 'adam': optax.adam}[run_config['opt']](**run_config['opt_params'])
@@ -107,6 +109,7 @@ def make_step(weights, opt_state, batch):
     return weights, opt_state, loss_val
 
 i_step = 0
+done = False
 for _ in range(run_config['n_epoch']):
     trainloader = lra_config.get_dataloader('train')
     for batch in trainloader:
@@ -122,9 +125,10 @@ for _ in range(run_config['n_epoch']):
                     "n_tokens_trained": i_step * run_config['batch_size'] * run_config['block_size'],
                 })
         if "n_train_step" in run_config and i_step >= run_config['n_train_step']:
+            done = True
             break
         i_step += 1
-
+    if done: break
 ofile = op.join(wandb_run.dir, "rwkv_weights.npy") if use_wandb else "rwkv_weights.npy"
 np.save(ofile, weights)
 

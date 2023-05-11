@@ -155,7 +155,7 @@ match_rule = {
     "ln_out.bias"   : "*ln_out.bias",
 }
 
-def init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, match_rule):
+def init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, match_rule=match_rule):
     # get flat version of both winfo and ref_weights
     # maintain the tree structure for reconstruction later
     flat_winfo, re = fold_winfo(winfo)
@@ -177,6 +177,7 @@ def init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, match_rule)
                 flat_ = np.hstack([flat_ref_weights[w].flatten() for w in matched_keys])
                 flat_weights[k] = resample_weights(keygen(), shape, flat_)
                 found_match = True
+                # allow only one match
                 break
         # if no match found, raise error.
         # TODO: add a default rule to match all weights
