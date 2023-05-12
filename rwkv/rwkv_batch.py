@@ -75,22 +75,11 @@ def token_mixing_batch(x, time_kernel_r, time_kernel_v, r_proj, k_proj, v_proj, 
     rwkv = c / d
     return (r * rwkv) @ o_proj.T
 
-def channel_mixing_batch(x, time_kernel_r, time_kernel_k, r_proj, k_proj, v_proj):
+def channel_mixing_batch(x, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
-    # x_ = rearrange(x, 's b e -> (s b) e')
-    x_ = rearrange(x, 's b e -> s (b e)').reshape((1, x.shape[0], -1))
-    time_kernel_r_ = time_kernel_r.reshape((1,1,-1))
-    time_kernel_k_ = time_kernel_k.reshape((1,1,-1))
-
-    # convolve over time
-    x_r_ = time_conv(x_, time_kernel_r_).reshape((x.shape[0], -1))
-    x_k_ = time_conv(x_, time_kernel_k_).reshape((x.shape[0], -1))
-
-    x_k = rearrange(x_k_, 's (b e) -> (s b) e', b=x.shape[1])
-    x_r = rearrange(x_r_, 's (b e) -> (s b) e', b=x.shape[1])
-
-    channel_mixing_p = vmap(channel_mixing, in_axes=(0, 0, None, None, None), out_axes=0)
-    out_ = channel_mixing_p(x_r, x_k, r_proj, k_proj, v_proj)
+    x_ = rearrange(x, 's b e -> (s b) e')
+    channel_mixing_p = vmap(channel_mixing, in_axes=(0, None, None, None), out_axes=0)
+    out_ = channel_mixing_p(x_, r_proj, k_proj, v_proj)
     return rearrange(out_, '(s b) e -> s b e', s=x.shape[0])
 
 @jit

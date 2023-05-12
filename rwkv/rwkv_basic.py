@@ -39,9 +39,9 @@ def token_mixing(x, x_prevs, a_prev, b_prev, p_prev, time_mixes_r, time_mixes_k,
 
     return o_proj @ rwkv, a_state, b_state, p_state
 
-def channel_mixing(x_r, x_k, r_proj, k_proj, v_proj):
-    r = sigmoid(r_proj @ x_r)
-    k = np.square(relu(k_proj @ x_k))
+def channel_mixing(x, r_proj, k_proj, v_proj):
+    r = sigmoid(r_proj @ x)
+    k = np.square(relu(k_proj @ x))
     return r * (v_proj @ k)
 
 @jit
