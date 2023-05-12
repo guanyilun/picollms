@@ -49,13 +49,11 @@ def token_mixing_batch(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_
     rwkv = c / d
     return (r * rwkv) @ o_proj.T
 
-def channel_mixing_batch(x, time_mix_r, time_mix_k, r_proj, k_proj, v_proj):
+def channel_mixing_batch(x, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
-    x_prev  = np.concatenate([np.zeros_like(x[:1, ...]), x[:-1, ...]], axis=0)
     x_ = rearrange(x, 's b e -> (s b) e')
-    x_prev_ = rearrange(x_prev, 's b e -> (s b) e')
-    channel_mixing_p = vmap(channel_mixing, in_axes=(0, 0, None, None, None, None, None), out_axes=0)
-    out_ = channel_mixing_p(x_, x_prev_, time_mix_r, time_mix_k, r_proj, k_proj, v_proj)
+    channel_mixing_p = vmap(channel_mixing, in_axes=(0, None, None, None), out_axes=0)
+    out_ = channel_mixing_p(x_, r_proj, k_proj, v_proj)
     return rearrange(out_, '(s b) e -> s b e', s=x.shape[0])
 
 @jit

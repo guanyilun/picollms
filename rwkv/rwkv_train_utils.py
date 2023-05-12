@@ -61,8 +61,6 @@ def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_vocab_out=None):
                 'k_proj': (n_ffn, n_channel),
                 'v_proj': (n_channel, n_ffn),
                 'r_proj': (n_channel, n_channel),
-                'time_mix_k': (n_channel,),
-                'time_mix_r': (n_channel,),
             },
             'ln1': {'weight': (n_channel,), 'bias': (n_channel,)},
             'ln2': {'weight': (n_channel,), 'bias': (n_channel,)},

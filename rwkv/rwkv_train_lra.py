@@ -29,9 +29,9 @@ lion_params = {
 run_config = {
     'name': 'rwkv-lra',
     'n_epoch': 3,
-    'batch_size': 32,
+    'batch_size': 8,
     'eval_freq': 200,
-    'n_train_step': 5000, # or n_epoch, whichever comes first
+    'n_train_step': 5000*4, # or n_epoch, whichever comes first
     'n_channel': 512,
     'n_layer': 4,
     'n_ffn': 1024,
