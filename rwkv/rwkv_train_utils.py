@@ -35,7 +35,7 @@ class KeyGen:
         self.key, new_key = jax.random.split(self.key)
         return new_key
 
-def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_vocab_out=None):
+def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_kernel, n_vocab_out=None):
     # default to the same vocab size for output
     n_vocab_out = n_vocab_out or n_vocab
     info = {
@@ -51,9 +51,8 @@ def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_vocab_out=None):
                 'k_proj': (n_channel, n_channel),
                 'v_proj': (n_channel, n_channel),
                 'r_proj': (n_channel, n_channel),
-                'time_mix_r': (n_channel,),
-                'time_mix_k': (n_channel,),
-                'time_mix_v': (n_channel,),
+                'time_kernel_r': (n_kernel,),
+                'time_kernel_v': (n_kernel,),
                 'time_decay': (n_channel,),
                 'time_first': (n_channel,),
             },
@@ -61,8 +60,6 @@ def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_vocab_out=None):
                 'k_proj': (n_ffn, n_channel),
                 'v_proj': (n_channel, n_ffn),
                 'r_proj': (n_channel, n_channel),
-                'time_mix_k': (n_channel,),
-                'time_mix_r': (n_channel,),
             },
             'ln1': {'weight': (n_channel,), 'bias': (n_channel,)},
             'ln2': {'weight': (n_channel,), 'bias': (n_channel,)},
@@ -139,9 +136,33 @@ match_rule = {
     "att.r_proj": "*att.r_proj",
     "time_decay": "*time_decay",
     "time_first": "*time_first",
-    "time_mix_k": "*time_mix_k",
-    "time_mix_v": "*time_mix_v",
-    "time_mix_r": "*time_mix_r",
+    "time_kernel_v": "*time_mix_v",
+    "time_kernel_r": "*time_mix_r",
+    "ffn.k_proj": "*ffn.k_proj",
+    "ffn.v_proj": "*ffn.v_proj",
+    "ffn.r_proj": "*ffn.r_proj",
+    "ln0.weight": "*ln0.weight",
+    "ln0.bias"  : "*ln0.bias",
+    "ln1.weight": "*ln1.weight",
+    "ln1.bias"  : "*ln1.bias",
+    "ln2.weight": "*ln2.weight",
+    "ln2.bias"  : "*ln2.bias",
+    "ln_out.weight" : "*ln_out.weight",
+    "ln_out.bias"   : "*ln_out.bias",
+}
+
+# pretrained conv version in this branch
+match_rule_conv = {
+    "emb"       : "*emb*",
+    "head"      : "*head*",
+    "att.k_proj": "*att.k_proj",
+    "att.v_proj": "*att.v_proj",
+    "att.o_proj": "*att.o_proj",
+    "att.r_proj": "*att.r_proj",
+    "time_decay": "*time_decay",
+    "time_first": "*time_first",
+    "time_kernel_v": "*time_kernel_v",
+    "time_kernel_r": "*time_kernel_r",
     "ffn.k_proj": "*ffn.k_proj",
     "ffn.v_proj": "*ffn.v_proj",
     "ffn.r_proj": "*ffn.r_proj",
