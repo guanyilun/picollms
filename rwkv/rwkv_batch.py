@@ -26,7 +26,7 @@ def assoc_reduce_step(left, right):
     a, b, p = exp_mix_frac(p_l + w_r, p_r, expkv_l, expk_l, expkv_r, expk_r)
     return a, b, w_l + w_r, p
 
-def token_mixing_batch(x, time_mix_a, time_mix_b, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
+def token_mixing_batch(x, time_mix_a, time_mix_b, time_mix_p, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
     """All this annoying rearranging is to try to do as much work for each
     reduction step so the overhead from multiprocessing becomes negligible. It may
     have very little effect, but it's worth a try."""
@@ -44,10 +44,11 @@ def token_mixing_batch(x, time_mix_a, time_mix_b, r_proj, k_proj, v_proj, o_proj
 
     a_prev  = np.concatenate((np.zeros_like(a_state[0:1]), a_state[:-1]))
     b_prev  = np.concatenate((np.zeros_like(b_state[0:1]), b_state[:-1]))
-    # p_prev  = np.concatenate((np.zeros_like(p_state[0:1]), p_state[:-1]))
+    p_prev  = np.concatenate((np.zeros_like(p_state[0:1]), p_state[:-1]))
     # a_state, b_state, p_state = exp_mix_frac(p_prev, p_state, a_prev, a_state, b_prev, b_state)
     a_state = time_mix(a_state, a_prev, time_mix_a)
     b_state = time_mix(b_state, b_prev, time_mix_b)
+    p_state = time_mix(p_state, p_prev, time_mix_p)
 
     expkv   = rearrange(expkv_, 's (b e) -> s b e', b=r.shape[1])
     expk    = rearrange(expk_, 's (b e) -> s b e', b=r.shape[1])
