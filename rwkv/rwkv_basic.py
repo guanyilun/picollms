@@ -17,29 +17,29 @@ def exp_mix_frac(p1, p2, v1_upper, v1_lower, v2_upper, v2_lower):
     e2 = np.exp(p2 - p)
     return v1_upper * e1 + v2_upper * e2, v1_lower * e1 + v2_lower * e2, p
 
-def rkv(x, x_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj):
-    x_r = time_mix(x, x_prev, time_mix_r)
-    x_k = time_mix(x, x_prev, time_mix_k)
-    x_v = time_mix(x, x_prev, time_mix_v)
+def rkv(x_r, x_k, x_v, r_proj, k_proj, v_proj):
     r = sigmoid(r_proj @ x_r)
     k = k_proj @ x_k
     v = v_proj @ x_v
     return r, k, v
 
-def token_mixing(x, x_prev, a_prev, b_prev, p_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj, o_proj, time_first, time_decay):
+def token_mixing(x, x_prevs, a_prev, b_prev, p_prev, time_mixes_r, time_mixes_k, time_mixes_v, r_proj, k_proj, v_proj, o_proj, time_first, time_decay):
     u, w = time_first, time_decay
-    r, k, v = rkv(x, x_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj)
+
+    x_r = time_mix(x, x_prevs, time_mixes_r)
+    x_k = time_mix(x, x_prevs, time_mixes_k)
+    x_v = time_mix(x, x_prevs, time_mixes_v)
+
+    r, k, v = rkv(x_r, x_k, x_v, r_proj, k_proj, v_proj)
     expkv, expk, p = v, np.ones_like(v), k
+
     a_state, b_state, p_state = exp_mix_frac(p_prev + w, p, a_prev, b_prev, expkv, expk)
-    c, d, _ = exp_mix_frac(p_prev, p+u, a_prev, b_prev, expkv, expk)  # u+w is an approx to log(exp(u+w)-1)
-    # alternative approximation: u+w \approx log(exp(u+w)-1)
-    # c, d, _ = exp_mix_frac(p_state, p+u+w, a_state, b_state, expkv, expk)
+    c, d, _ = exp_mix_frac(p_state, p+u+w, a_state, b_state, expkv, expk)
     rwkv = r * (c / d)
+
     return o_proj @ rwkv, a_state, b_state, p_state
 
-def channel_mixing(x, x_prev, time_mix_r, time_mix_k, r_proj, k_proj, v_proj):
-    x_r = time_mix(x, x_prev, time_mix_r)
-    x_k = time_mix(x, x_prev, time_mix_k)
+def channel_mixing(x_r, x_k, r_proj, k_proj, v_proj):
     r = sigmoid(r_proj @ x_r)
     k = np.square(relu(k_proj @ x_k))
     return r * (v_proj @ k)
