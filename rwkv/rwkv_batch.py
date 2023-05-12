@@ -1,25 +1,51 @@
 """Similar to rwkv_basic but used for training so it doesn't
 keep track of any states"""
 
-#%%
+import jax
 from jax import vmap, jit
 import jax.numpy as np
 from jax import lax
 from einops import rearrange, repeat, einsum
 from rwkv_basic import rkv, exp_mix_frac, channel_mixing, layer_norm
 
-def rkv_batch(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj):
+def time_conv(x, kernel):
+    # x: (1, n_seq, n_batch x n_embed) -> CWN
+    # kernel: (1, 1, kernel_size,) -> IOW
+    # output: (1, n_seq, n_batch x n_embed) -> CWN
+    kernel_size = kernel.shape[-1]
+    dn = lax.conv_dimension_numbers(x.shape, kernel.shape, ('CWN', 'IOW', 'CWN'))
+    return lax.conv_general_dilated(x, kernel,
+                                    (1,), # window strides
+                                    # [(kernel_size, -1)], # padding mode: 1 step dilated causal convolution up to x_{t-1}
+                                    [(kernel_size-1, 0)], # padding mode: 0 step dilated causal convolution up to x_{t}
+                                    (1,), # lhs/image dilation
+                                    (1,), # rhs/kernel dilation
+                                    dn)
+
+def rkv_batch(x, time_kernel_r, time_kernel_k, time_kernel_v, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
-    # all the rearrange calls are to parallize over batch and seq
-    # rearrange without permutation is just creating view so it's fast
-    x_prev  = np.concatenate([np.zeros_like(x[:1, ...]), x[:-1, ...]], axis=0)
-    x_      = rearrange(x, 's b e -> (s b) e')
-    x_prev_ = rearrange(x_prev, 's b e -> (s b) e')
-    rkv_p   = vmap(rkv, in_axes=(0, 0, None, None, None, None, None, None), out_axes=(0,0,0))
-    r_, k_, v_ = rkv_p(x_, x_prev_, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj)
+    # c for channel in convolution context
+    x_ = rearrange(x, 's b e -> s (b e)').reshape((1, x.shape[0], -1))
+    time_kernel_r_ = time_kernel_r.reshape((1,1,-1))
+    time_kernel_k_ = time_kernel_k.reshape((1,1,-1))
+    time_kernel_v_ = time_kernel_v.reshape((1,1,-1))
+
+    # convolve over time
+    x_k_ = time_conv(x_, time_kernel_k_).reshape((x.shape[0], -1))
+    x_v_ = time_conv(x_, time_kernel_v_).reshape((x.shape[0], -1))
+    x_r_ = time_conv(x_, time_kernel_r_).reshape((x.shape[0], -1))
+
+    x_k = rearrange(x_k_, 's (b e) -> (s b) e', b=x.shape[1])
+    x_v = rearrange(x_v_, 's (b e) -> (s b) e', b=x.shape[1])
+    x_r = rearrange(x_r_, 's (b e) -> (s b) e', b=x.shape[1])
+    
+    rkv_p = vmap(rkv, in_axes=(0, 0, 0, None, None, None), out_axes=(0,0,0))
+    r_, k_, v_ = rkv_p(x_r, x_k, x_v, r_proj, k_proj, v_proj)
+
     r = rearrange(r_, '(s b) e -> s b e', s=x.shape[0])
     k = rearrange(k_, '(s b) e -> s b e', s=x.shape[0])
     v = rearrange(v_, '(s b) e -> s b e', s=x.shape[0])
+
     return r, k, v
 
 def assoc_reduce_step(left, right):
@@ -28,12 +54,12 @@ def assoc_reduce_step(left, right):
     a, b, p = exp_mix_frac(p_l + w_r, p_r, expkv_l, expk_l, expkv_r, expk_r)
     return a, b, w_l + w_r, p
 
-def token_mixing_batch(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
+def token_mixing_batch(x, time_kernel_r, time_kernel_k, time_kernel_v, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
     """All this annoying rearranging is to try to do as much work for each
     reduction step so the overhead from multiprocessing becomes negligible. It may
     have very little effect, but it's worth a try."""
     u, w = time_first, time_decay
-    r, k, v = rkv_batch(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj)
+    r, k, v = rkv_batch(x, time_kernel_r, time_kernel_k, time_kernel_v, r_proj, k_proj, v_proj)
     k_ = rearrange(k, 's b e -> s (b e)')
     v_ = rearrange(v, 's b e -> s (b e)')
     W_ = repeat(time_decay, 'e -> s (b e)', s=r.shape[0], b=r.shape[1])
@@ -49,13 +75,11 @@ def token_mixing_batch(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_
     rwkv = c / d
     return (r * rwkv) @ o_proj.T
 
-def channel_mixing_batch(x, time_mix_r, time_mix_k, r_proj, k_proj, v_proj):
+def channel_mixing_batch(x, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
-    x_prev  = np.concatenate([np.zeros_like(x[:1, ...]), x[:-1, ...]], axis=0)
     x_ = rearrange(x, 's b e -> (s b) e')
-    x_prev_ = rearrange(x_prev, 's b e -> (s b) e')
-    channel_mixing_p = vmap(channel_mixing, in_axes=(0, 0, None, None, None, None, None), out_axes=0)
-    out_ = channel_mixing_p(x_, x_prev_, time_mix_r, time_mix_k, r_proj, k_proj, v_proj)
+    channel_mixing_p = vmap(channel_mixing, in_axes=(0, None, None, None), out_axes=0)
+    out_ = channel_mixing_p(x_, r_proj, k_proj, v_proj)
     return rearrange(out_, '(s b) e -> s b e', s=x.shape[0])
 
 @jit

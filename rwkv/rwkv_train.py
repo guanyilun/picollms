@@ -7,13 +7,12 @@ from jax.nn.initializers import zeros, glorot_normal
 import optax
 import os.path as op
 
-from rwkv_basic import rwkv_net
 from rwkv_batch import rwkv_net_batch
-from rwkv_utils import get_tokenizer, rnn_generate, parse_rwkv_weight
+from rwkv_utils import get_tokenizer, rnn_generate_batch_stateless, parse_rwkv_weight
 import rwkv_train_utils as tu
 from data_utils import load_dataset
 
-use_wandb = False
+use_wandb = True
 adam_params = {
     'learning_rate': 1e-4,
     'b1': 0.9,
@@ -40,7 +39,8 @@ run_config = {
     'opt': 'lion',
     'opt_params': lion_params,
     'block_size': 256,
-    'save_step': 10000,
+    'save_step': 5000,
+    'n_kernel': 50,
 }
 
 if use_wandb:
@@ -60,6 +60,7 @@ winfo = tu.init_weight_info(
     run_config['n_channel'],
     run_config['n_layer'],
     run_config['n_ffn'],
+    run_config['n_kernel'],
 )
 # option 1:
 # all zero init but head and embedding
@@ -78,10 +79,12 @@ winfo = tu.init_weight_info(
 # logging.info("weights initialized")
 
 # option 4:
-ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
+# ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
+ref_weights = np.load("rwkv_weights_10000.npy", allow_pickle=True).item()
 logging.info("weights initialized")
 # weights = tu.init_weights_by_resampling_matching_tree(winfo, keygen, ref_weights)
-weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule)
+# weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule)
+weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule_conv)
 
 # initialize optimizers
 logging.info("initializing optimizer...")
@@ -95,8 +98,8 @@ loss_fn_grad = jax.value_and_grad(loss_fn)
 acc_fn = tu.get_acc_fn(rwkv_net_batch)
 
 def get_validation_results(weights):
-    prompt = "Hamlet"
-    output = rnn_generate(rwkv_net, weights, prompt, 50, tokenizer)
+    prompt = "Hamlet once said that to be or not to be, "
+    output = rnn_generate_batch_stateless(rwkv_net_batch, weights, prompt, 50, tokenizer)
     res = {'output': output}
     return res
 
@@ -121,16 +124,17 @@ for _ in range(run_config['n_epoch']):
                 wandb.log({
                     "batch_loss": loss_val,
                     "n_tokens_trained": i_step * run_config['batch_size'] * run_config['block_size'],
-                    "generated": wandb.Html(res['output'])
+                    # "generated": wandb.Html(res['output'])
                 })
         if "n_train_step" in run_config and i_step >= run_config['n_train_step']:
             break
         if i_step % run_config['save_step'] == 0:
-            ofile = op.join(wandb_run.dir, f"rwkv_weights_{i_step}.npy") if use_wandb else f"rwkv_weights_{i_step}.npy"
+            ofile = f"rwkv_weights_{i_step}.npy"
             np.save(ofile, weights)
         i_step += 1
 
-ofile = op.join(wandb_run.dir, "rwkv_weights.npy") if use_wandb else "rwkv_weights.npy"
+# ofile = op.join(wandb_run.dir, "rwkv_weights.npy") if use_wandb else "rwkv_weights.npy"
+ofile = "rwkv_weights.npy"
 np.save(ofile, weights)
 
 if use_wandb: wandb.finish()

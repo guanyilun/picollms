@@ -29,7 +29,7 @@ lion_params = {
 run_config = {
     'name': 'rwkv-lra',
     'n_epoch': 3,
-    'batch_size': 32,
+    'batch_size': 8,
     'eval_freq': 200,
     'n_train_step': 5000, # or n_epoch, whichever comes first
     'n_channel': 512,
@@ -40,6 +40,7 @@ run_config = {
     'opt': 'lion',
     'opt_params': lion_params,
     'block_size': 2048,  # S5 default
+    'n_kernel': 50,
 }
 
 if use_wandb:
@@ -58,6 +59,7 @@ winfo = tu.init_weight_info(
     run_config['n_channel'],
     run_config['n_layer'],
     run_config['n_ffn'],
+    run_config['n_kernel'],
     n_vocab_out=lra_config.n_classes_out
 )
 
@@ -72,8 +74,9 @@ keygen = tu.KeyGen()
 # w_init_fn = lambda key, shape: glorot_normal()(key, shape) if len(shape) == 2 else zeros(key, shape)
 # weights = tu.init_weights(winfo, keygen, w_init_fn)
 # option 3:
-ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
-weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights)
+# ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
+ref_weights = np.load("rwkv_weights_20000.npy", allow_pickle=True).item()
+weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule_conv)
 
 # initialize optimizers
 optimizer = {'lion': optax.lion, 'adam': optax.adam}[run_config['opt']](**run_config['opt_params'])
