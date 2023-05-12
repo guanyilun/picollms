@@ -1,7 +1,7 @@
 """train rwkv using long-range arena benchmark dataset"""
 import jax
 from jax import jit, numpy as np
-from jax.nn.initializers import zeros, glorot_normal
+# from jax.nn.initializers import zeros, glorot_normal
 
 import optax
 import wandb
@@ -10,10 +10,10 @@ from functools import partial
 
 from rwkv_batch import rwkv_net_batch
 import rwkv_train_utils as tu
-from rwkv_utils import parse_rwkv_weight
+# from rwkv_utils import parse_rwkv_weight
 from lra_utils import LRABatchConfig, lra_loss_fn, lra_acc_fn
 
-use_wandb = True
+use_wandb = False
 adam_params = {
     'learning_rate': 1e-4,
     'b1': 0.9,
@@ -31,7 +31,8 @@ run_config = {
     'n_epoch': 3,
     'batch_size': 8,
     'eval_freq': 200,
-    'n_train_step': 5000, # or n_epoch, whichever comes first
+    # 'n_train_step': 5000, # or n_epoch, whichever comes first
+    'n_train_step': 5000*4, # or n_epoch, whichever comes first
     'n_channel': 512,
     'n_layer': 4,
     'n_ffn': 1024,
@@ -40,7 +41,7 @@ run_config = {
     'opt': 'lion',
     'opt_params': lion_params,
     'block_size': 2048,  # S5 default
-    'n_kernel': 50,
+    'n_kernel': 10,
 }
 
 if use_wandb:

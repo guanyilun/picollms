@@ -54,19 +54,23 @@ def rwkv_net(token, state, emb, blocks, ln_out, head):
 
     for i in range(len(blocks)):
         x_tm = layer_norm(x, **blocks[i]['ln1'])
-        x_p, a_state, b_state, p_state = token_mixing(x_tm, state[i, 1], state[i, 2], state[i, 3], state[i, 4], **blocks[i]['att'])
+        x_p, a_state, b_state, p_state = token_mixing(x_tm, state[i, 0], state[i, 1], state[i, 2], state[i, 3], **blocks[i]['att'])
         x += x_p
 
         x_cm = layer_norm(x, **blocks[i]['ln2'])
         x += channel_mixing(x_cm, state[i, 0], **blocks[i]['ffn'])
 
-        state = state.at[i, 0].set(x_cm)
-        state = state.at[i, 1].set(x_tm)
-        state = state.at[i, 2].set(a_state)
-        state = state.at[i, 3].set(b_state)
-        state = state.at[i, 4].set(p_state)
+        state = state.at[i, 0].set(x_tm)
+        state = state.at[i, 1].set(a_state)
+        state = state.at[i, 2].set(b_state)
+        state = state.at[i, 3].set(p_state)
 
     x = layer_norm(x, **ln_out)
     logits = head['weight'] @ x
 
     return logits, state
+
+
+# TODO list:
+# - [ ] time mix using convolution
+# - [X] remove time mix in channel mixing
