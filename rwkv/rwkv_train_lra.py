@@ -13,7 +13,7 @@ import rwkv_train_utils as tu
 # from rwkv_utils import parse_rwkv_weight
 from lra_utils import LRABatchConfig, lra_loss_fn, lra_acc_fn
 
-use_wandb = False
+use_wandb = True
 adam_params = {
     'learning_rate': 1e-4,
     'b1': 0.9,
@@ -41,7 +41,7 @@ run_config = {
     'opt': 'lion',
     'opt_params': lion_params,
     'block_size': 2048,  # S5 default
-    'n_kernel': 10,
+    'n_kernel': 1024,
 }
 
 if use_wandb:

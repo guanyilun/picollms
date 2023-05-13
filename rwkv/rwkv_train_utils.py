@@ -51,7 +51,6 @@ def init_weight_info(n_vocab, n_channel, n_layer, n_ffn, n_kernel, n_vocab_out=N
                 'k_proj': (n_channel, n_channel),
                 'v_proj': (n_channel, n_channel),
                 'r_proj': (n_channel, n_channel),
-                'time_kernel_r': (n_kernel,),
                 'time_kernel_v': (n_kernel,),
                 'time_decay': (n_channel,),
                 'time_first': (n_channel,),

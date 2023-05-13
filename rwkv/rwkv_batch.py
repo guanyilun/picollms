@@ -24,27 +24,27 @@ def time_conv(x, kernel):
                                     (1,), # rhs/kernel dilation
                                     dn)
 
-def rkv_batch(x, time_kernel_r, time_kernel_v, r_proj, k_proj, v_proj):
+def rkv_batch(x, time_kernel_v, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
-    x_ = rearrange(x, 's b e -> s (b e)').reshape((1, x.shape[0], -1))
-    time_kernel_r_ = time_kernel_r.reshape((1,1,-1))
+    n_seq, n_batch, n_embed = x.shape
+    x_ = rearrange(x, 's b e -> s (b e)').reshape((1, n_seq, -1))
     time_kernel_v_ = time_kernel_v.reshape((1,1,-1))
 
     # convolve over time
-    x_r_ = time_conv(x_, time_kernel_r_).reshape((x.shape[0], -1))
-    x_k_ = x_.reshape((x.shape[0], -1))  # no mixing for k
-    x_v_ = time_conv(x_, time_kernel_v_).reshape((x.shape[0], -1))
+    x_r_ = x_.reshape((n_seq, -1))  # no mixing for k
+    x_k_ = x_r_
+    x_v_ = time_conv(x_, time_kernel_v_).reshape((n_seq, -1))
 
-    x_r = rearrange(x_r_, 's (b e) -> (s b) e', b=x.shape[1])
-    x_k = rearrange(x_k_, 's (b e) -> (s b) e', b=x.shape[1])
-    x_v = rearrange(x_v_, 's (b e) -> (s b) e', b=x.shape[1])
+    x_r = rearrange(x_r_, 's (b e) -> (s b) e', b=n_batch)
+    x_k = x_r
+    x_v = rearrange(x_v_, 's (b e) -> (s b) e', b=n_batch)
     
     rkv_p = vmap(rkv, in_axes=(0, 0, 0, None, None, None), out_axes=(0,0,0))
     r_, k_, v_ = rkv_p(x_r, x_k, x_v, r_proj, k_proj, v_proj)
 
-    r = rearrange(r_, '(s b) e -> s b e', s=x.shape[0])
-    k = rearrange(k_, '(s b) e -> s b e', s=x.shape[0])
-    v = rearrange(v_, '(s b) e -> s b e', s=x.shape[0])
+    r = rearrange(r_, '(s b) e -> s b e', s=n_seq)
+    k = rearrange(k_, '(s b) e -> s b e', s=n_seq)
+    v = rearrange(v_, '(s b) e -> s b e', s=n_seq)
 
     return r, k, v
 
@@ -54,12 +54,12 @@ def assoc_reduce_step(left, right):
     a, b, p = exp_mix_frac(p_l + w_r, p_r, expkv_l, expk_l, expkv_r, expk_r)
     return a, b, w_l + w_r, p
 
-def token_mixing_batch(x, time_kernel_r, time_kernel_v, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
+def token_mixing_batch(x, time_kernel_v, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
     """All this annoying rearranging is to try to do as much work for each
     reduction step so the overhead from multiprocessing becomes negligible. It may
     have very little effect, but it's worth a try."""
     u, w = time_first, time_decay
-    r, k, v = rkv_batch(x, time_kernel_r, time_kernel_v, r_proj, k_proj, v_proj)
+    r, k, v = rkv_batch(x, time_kernel_v, r_proj, k_proj, v_proj)
     k_ = rearrange(k, 's b e -> s (b e)')
     v_ = rearrange(v, 's b e -> s (b e)')
     W_ = repeat(time_decay, 'e -> s (b e)', s=r.shape[0], b=r.shape[1])
