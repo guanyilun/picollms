@@ -15,7 +15,7 @@ from lra_utils import LRABatchConfig, lra_loss_fn, lra_acc_fn
 
 use_wandb = True
 adam_params = {
-    'learning_rate': 1e-4,
+    'learning_rate': 1e-3,
     'b1': 0.9,
     'b2': 0.999,
     'eps': 1e-8,
@@ -28,23 +28,25 @@ lion_params = {
 }
 run_config = {
     'name': 'rwkv-lra',
-    'n_epoch': 3,
-    'batch_size': 8,
+    'n_epoch': 1000,
+    'batch_size': 64,
     'eval_freq': 200,
-    'n_train_step': 5000*4, # or n_epoch, whichever comes first
-    'n_channel': 512,
+    # 'n_train_step': 5000, # or n_epoch, whichever comes first
+    # 'n_channel': 512,
+    'n_channel': 96,
     'n_layer': 4,
-    'n_ffn': 1024,
-    # 'opt': 'adam',
-    # 'opt_params': adam_params,
-    'opt': 'lion',
-    'opt_params': lion_params,
+    'n_ffn': 192,
+    'opt': 'adam',
+    'opt_params': adam_params,
+    # 'opt': 'lion',
+    # 'opt_params': lion_params,
     'block_size': 2048,  # S5 default
+    'save_freq': 10000,
 }
 
 if use_wandb:
     wandb_run = wandb.init(
-        project="inside-transformer",
+        project="lra-listops",
         config=run_config,
     )
 
@@ -114,8 +116,9 @@ for _ in range(run_config['n_epoch']):
     trainloader = lra_config.get_dataloader('train')
     for batch in trainloader:
         weights, opt_state, loss_val = make_step(weights, opt_state, batch)
-        if i_step % run_config['eval_freq'] == 0:
+        if i_step % 10 == 0:
             print(f"step: {i_step}, batch loss: {loss_val}")
+        if i_step % run_config['eval_freq'] == 0:
             res = get_validation_results(lra_config.get_dataloader('val'), weights)
             if use_wandb:
                 wandb.log({
@@ -128,11 +131,12 @@ for _ in range(run_config['n_epoch']):
             done = True
             break
         i_step += 1
+        if "save_freq" in run_config and i_step % run_config["save_freq"] == 0:
+            ofile = "rwkv_weights_{:06d}.npy".format(i_step)
+            if use_wandb: ofile = op.join(wandb_run.dir, ofile)
+            np.save(ofile, weights)
     if done: break
 ofile = op.join(wandb_run.dir, "rwkv_weights.npy") if use_wandb else "rwkv_weights.npy"
 np.save(ofile, weights)
 
 if use_wandb: wandb.finish()
-
-# example loading saved weights with np
-# res = np.load("rwkv_weights.npy", allow_pickle=True).item()
