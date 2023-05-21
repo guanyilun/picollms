@@ -1,7 +1,6 @@
 """Similar to rwkv_basic but used for training so it doesn't
 keep track of any states"""
 
-#%%
 from jax import vmap, jit
 import jax.numpy as np
 from jax import lax
@@ -12,12 +11,12 @@ def rkv_batch(x, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
     # all the rearrange calls are to parallize over batch and seq
     # rearrange without permutation is just creating view so it's fast
+    # chord mixer
     x_chunks = np.split(x, 8, axis=-1)
     def shift_and_pad(x, shift, pad=0):
         return np.pad(x[:-shift,...], ((shift, 0), (0, 0), (0, 0)), constant_values=pad)
     x_chunks_cdr = [shift_and_pad(x_chunks[i], 2**i-1) for i in range(1, len(x_chunks))]
     x = np.concatenate([x_chunks[0], *x_chunks_cdr], axis=-1)
-
     x_      = rearrange(x, 's b e -> (s b) e')
     rkv_p   = vmap(rkv, in_axes=(0, None, None, None), out_axes=(0,0,0))
     r_, k_, v_ = rkv_p(x_, r_proj, k_proj, v_proj)
@@ -53,17 +52,18 @@ def token_mixing_batch(x, r_proj, k_proj, v_proj, o_proj, time_decay, time_first
     expk    = rearrange(expk_, 's (b e) -> s b e', b=r.shape[1])
     p       = rearrange(p_, 's (b e) -> s b e', b=r.shape[1])
     c, d, _ = exp_mix_frac(p_state, p + u + w, a_state, b_state, expkv, expk)
+
     rwkv = c / d
     return (r * rwkv) @ o_proj.T
 
 def channel_mixing_batch(x, r_proj, k_proj, v_proj):
     # x: (n_seq, n_batch, n_embed)
     # now perform chordmixing
-    x_chunks = np.split(x, 8, axis=-1)
-    def shift_and_pad(x, shift, pad=0):
-        return np.pad(x[:-shift,...], ((shift, 0), (0, 0), (0, 0)), constant_values=pad)
-    x_chunks_cdr = [shift_and_pad(x_chunks[i], 2**i-1) for i in range(1, len(x_chunks))]
-    x = np.concatenate([x_chunks[0], *x_chunks_cdr], axis=-1)
+    # x_chunks = np.split(x, 8, axis=-1)
+    # def shift_and_pad(x, shift, pad=0):
+    #     return np.pad(x[:-shift,...], ((shift, 0), (0, 0), (0, 0)), constant_values=pad)
+    # x_chunks_cdr = [shift_and_pad(x_chunks[i], 2**i-1) for i in range(1, len(x_chunks))]
+    # x = np.concatenate([x_chunks[0], *x_chunks_cdr], axis=-1)
     x_ = rearrange(x, 's b e -> (s b) e')
     channel_mixing_p = vmap(channel_mixing, in_axes=(0, None, None, None), out_axes=0)
     out_ = channel_mixing_p(x_, r_proj, k_proj, v_proj)

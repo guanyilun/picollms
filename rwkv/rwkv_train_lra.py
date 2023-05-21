@@ -20,8 +20,15 @@ adam_params = {
     'b2': 0.999,
     'eps': 1e-8,
 }
+adamw_params = {
+    'learning_rate': 1e-3,
+    'b1': 0.9,
+    'b2': 0.999,
+    'eps': 1e-8,
+    'weight_decay': 0.01
+}
 lion_params = {
-    'learning_rate': 1e-4,
+    'learning_rate': 1e-3,
     'b1': 0.95,
     'b2': 0.98,
     'weight_decay': 0.01
@@ -36,7 +43,7 @@ run_config = {
     'n_channel': 96,
     'n_layer': 4,
     'n_ffn': 192,
-    'opt': 'adam',
+    'opt': 'adamw',
     'opt_params': adam_params,
     # 'opt': 'lion',
     # 'opt_params': lion_params,
@@ -78,7 +85,7 @@ ref_weights = parse_rwkv_weight("pretrain/RWKV-4-Pile-169M-20220807-8023.pth")
 weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights)
 
 # initialize optimizers
-optimizer = {'lion': optax.lion, 'adam': optax.adam}[run_config['opt']](**run_config['opt_params'])
+optimizer = {'lion': optax.lion, 'adam': optax.adam, 'adamw': optax.adamw}[run_config['opt']](**run_config['opt_params'])
 opt_state = optimizer.init(weights)
 
 # setup loss, its grad, accuracy and validation
