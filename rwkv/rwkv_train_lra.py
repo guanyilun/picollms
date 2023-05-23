@@ -20,6 +20,13 @@ adam_params = {
     'b2': 0.999,
     'eps': 1e-8,
 }
+adamw_params = {
+    'learning_rate': 1e-3,
+    'b1': 0.9,
+    'b2': 0.999,
+    'eps': 1e-8,
+    'weight_decay': 0.01
+}
 lion_params = {
     'learning_rate': 1e-4,
     'b1': 0.95,
@@ -28,25 +35,28 @@ lion_params = {
 }
 run_config = {
     'name': 'rwkv-lra',
-    'n_epoch': 3,
-    'batch_size': 8,
+    'n_epoch': 1000,
+    'batch_size': 64,
     'eval_freq': 200,
     # 'n_train_step': 5000, # or n_epoch, whichever comes first
-    'n_train_step': 5000*4, # or n_epoch, whichever comes first
-    'n_channel': 512,
+    # 'n_train_step': 5000*4, # or n_epoch, whichever comes first
+    # 'n_channel': 512,
+    'n_channel': 96,
     'n_layer': 4,
-    'n_ffn': 1024,
+    'n_ffn': 192,
     # 'opt': 'adam',
     # 'opt_params': adam_params,
-    'opt': 'lion',
-    'opt_params': lion_params,
+    # 'opt': 'lion',
+    # 'opt_params': lion_params,
+    'opt': 'adamw',
+    'opt_params': adamw_params,
     'block_size': 2048,  # S5 default
-    'n_kernel': 1024,
+    'n_kernel': 5,
 }
 
 if use_wandb:
     wandb_run = wandb.init(
-        project="inside-transformer",
+        project="lra-listops",
         config=run_config,
     )
 
@@ -80,7 +90,7 @@ ref_weights = np.load("rwkv_weights_20000.npy", allow_pickle=True).item()
 weights = tu.init_weights_by_resampling_with_rule(winfo, keygen, ref_weights, tu.match_rule_conv)
 
 # initialize optimizers
-optimizer = {'lion': optax.lion, 'adam': optax.adam}[run_config['opt']](**run_config['opt_params'])
+optimizer = {'lion': optax.lion, 'adam': optax.adam, 'adamw': optax.adamw}[run_config['opt']](**run_config['opt_params'])
 opt_state = optimizer.init(weights)
 
 # setup loss, its grad, accuracy and validation
