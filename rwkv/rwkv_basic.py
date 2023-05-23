@@ -17,13 +17,10 @@ def exp_mix_frac(p1, p2, v1_upper, v1_lower, v2_upper, v2_lower):
     e2 = np.exp(p2 - p)
     return v1_upper * e1 + v2_upper * e2, v1_lower * e1 + v2_lower * e2, p
 
-def rkv(x, x_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj):
-    x_r = time_mix(x, x_prev, time_mix_r)
-    x_k = time_mix(x, x_prev, time_mix_k)
-    x_v = time_mix(x, x_prev, time_mix_v)
-    r = sigmoid(r_proj @ x_r)
-    k = k_proj @ x_k
-    v = v_proj @ x_v
+def rkv(x, r_proj, k_proj, v_proj):
+    r = sigmoid(r_proj @ x)
+    k = k_proj @ x
+    v = v_proj @ x
     return r, k, v
 
 def token_mixing(x, x_prev, a_prev, b_prev, p_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj, o_proj, time_first, time_decay):
@@ -37,11 +34,9 @@ def token_mixing(x, x_prev, a_prev, b_prev, p_prev, time_mix_r, time_mix_k, time
     rwkv = r * (c / d)
     return o_proj @ rwkv, a_state, b_state, p_state
 
-def channel_mixing(x, x_prev, time_mix_r, time_mix_k, r_proj, k_proj, v_proj):
-    x_r = time_mix(x, x_prev, time_mix_r)
-    x_k = time_mix(x, x_prev, time_mix_k)
-    r = sigmoid(r_proj @ x_r)
-    k = np.square(relu(k_proj @ x_k))
+def channel_mixing(x, r_proj, k_proj, v_proj):
+    r = sigmoid(r_proj @ x)
+    k = np.square(relu(k_proj @ x))
     return r * (v_proj @ k)
 
 @jit
