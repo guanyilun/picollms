@@ -6,6 +6,7 @@ import jax.numpy as np
 from jax import lax
 from einops import repeat, einsum
 import rwkv_basic as basic
+from functools import partial
 
 def rkv(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj):
     # x: (n_seq, n_embed)
@@ -14,22 +15,21 @@ def rkv(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj):
     r, k, v = rkv_p(x, x_prev, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj)
     return r, k, v
 
-def assoc_reduce_step(left, right):
-    (expkv_l, expk_l, w_l, p_l) = left
-    (expkv_r, expk_r, w_r, p_r) = right
-    a, b, p = basic.exp_mix_frac(p_l + w_r, p_r, expkv_l, expk_l, expkv_r, expk_r)
-    out = (a, b, w_l + w_r, p)
+def assoc_reduce_step(left, right, w):
+    (expkv_l, expk_l, p_l) = left
+    (expkv_r, expk_r, p_r) = right
+    a, b, p = basic.exp_mix_frac(p_l + w, p_r, expkv_l, expk_l, expkv_r, expk_r)
+    out = (a, b, p)
     return out, out
 
 def token_mixing(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj, o_proj, time_decay, time_first):
     # x: (n_seq, n_embed)
     u, w = time_first, time_decay
     r, k, v = rkv(x, time_mix_r, time_mix_k, time_mix_v, r_proj, k_proj, v_proj)
-    W = repeat(time_decay, 'e -> s e', s=x.shape[0])
     expkv, expk, p = v, np.ones_like(v), k
-    state = (expkv[0]*0, expk[0]*0, W[0]*0, p[0]*0)
-    # (_, _, _, _), (a_state, b_state, _, p_state) = lax.scan(assoc_reduce_step, state, (expkv, expk, W, p))
-    (a_state, b_state, _, p_state), (_, _, _, _) = lax.scan(assoc_reduce_step, state, (expkv, expk, W, p))
+    state = (expkv[0]*0, expk[0]*0, p[0]*0)
+    step_f = partial(assoc_reduce_step, w=w)
+    (a_state, b_state, p_state), (_, _, _) = lax.scan(step_f, state, (expkv, expk, p))
     c, d, _ = basic.exp_mix_frac(p_state, p + u + w, a_state, b_state, expkv, expk)
     rwkv = c / d
     return (r * rwkv) @ o_proj.T
