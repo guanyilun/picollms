@@ -4,7 +4,7 @@ keep track of any states"""
 from jax import vmap, jit
 import jax.numpy as np
 from jax import lax
-from einops import repeat, einsum
+from einops import einsum
 import rwkv_basic as basic
 from functools import partial
 
